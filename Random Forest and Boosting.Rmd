@@ -1,0 +1,219 @@
+---
+title: "Random Forest and Boosting"
+subtitle: Default Modeling
+output:
+  pdf_document: 
+    toc: true
+    toc_depth: 4
+---
+
+```{r, include=FALSE}
+options(tinytex.verbose = TRUE)
+```
+
+```{R Loadlib, echo=TRUE, results='hide', message=F, warning=F}
+library(dplyr)
+library(caret)
+library(randomForest)
+library(gbm)
+library(ROCR)
+library(optiRum)
+library(smbinning)
+```
+
+# Random Forest and Boosting
+## 1. Upload and prepare data
+### 1.1 Upload data
+```{r Upload Data}
+oneypd_tree <- read.csv(file = 'Z:/Model Risk/Adam/IFRS9_CECL_MV/data/chap2oneypd.csv')
+dplyr::glimpse(oneypd_tree)
+```
+
+#### Create default_event
+```{R Create default event}
+oneypd_tree <- mutate(oneypd_tree, default_event = if_else(
+  oneypd_tree$arrears_event == 1 |
+    oneypd_tree$bankrupt_event == 1 |
+    oneypd_tree$term_expiry_event == 1,
+  1,0))
+```
+
+#### Create default flag
+##### From "default_event" derive "default_indicator" as "Yes" "No"
+```{R Create default indicator}
+oneypd_tree <- mutate(oneypd_tree, default_indicator = if_else(
+  oneypd_tree$default_event == 1, "Yes", "No"
+))
+oneypd_tree$default_indicator <- as.factor(oneypd_tree$default_indicator)
+  
+```
+
+### 1.2 Select a subset of variables
+```{r Create default flag}
+oneypd_tree_sel_orig <-  dplyr::select(oneypd_tree,"default_indicator", "default_event", "bureau_score", "time_since_bankrupt",
+                "num_ccj", "time_since_ccj", "ccj_amount", "ltv", "mob", "max_arrears_12m",
+                "max_arrears_bal_6m", "avg_bal_6m", "annual_income", "loan_balance", "loan_term",
+                "cc_util", "emp_length", "months_since_recent_cc_delinq")
+```
+
+### 1.3 Filter out NAs
+```{r Filter out NAs}
+oneypd_tree_sel <- na.omit(oneypd_tree_sel_orig)
+```
+
+### 1.4 Split train/test
+```{R Split train/test}
+set.seed(123)
+train_index <- createDataPartition(oneypd_tree_sel$default_event, p = 0.70, list=FALSE)
+train <- oneypd_tree_sel[train_index, ]
+test <- oneypd_tree_sel[-train_index, ]
+```
+
+## Perform Random Forest analysis
+### 2.1 Fit random forest
+```{R Fit Random Forest}
+set.seed(123)
+rf_oneypd <- randomForest(default_indicator ~ . - default_event, data = oneypd_tree_sel[train_index, ], mtry=4, ntree=100,
+                          importance=TRUE, na.action=na.omit)
+```
+
+### 2.2 Variable importance analysis
+```{R Variable importance analysis}
+imp <- importance(rf_oneypd)
+print(imp)
+for (i in 3:4){
+  ord <- order(imp[,i], decreasing=FALSE)
+  dotchart(imp[ord, i],main=colnames(imp)[i], )  
+}
+
+```
+
+## 3. Perform boosting analysis
+```{r Perform boosting analysis}
+
+set.seed(1)
+boost_oneypd = gbm(default_event ~ . - default_indicator , data = oneypd_tree_sel[train_index, ],
+                   distribution='gaussian', n.trees=100, interaction.depth=4)
+summary(boost_oneypd)
+plot(boost_oneypd, i.var='max_arrears_12m')
+```
+
+### 3.1 Test sample analysis
+```{R Test sample analysis}
+yhat_boost_oneyd = predict(boost_oneypd, newdata = oneypd_tree_sel[-train_index, ],
+                           n.trees = 100
+                           )
+oneypd_test_boost = oneypd_tree_sel[-train_index,'default_event']
+mean((yhat_boost_oneyd - oneypd_test_boost)^2)
+summary(yhat_boost_oneyd)
+```
+
+### 3.2 Inclusion of shrinkage
+```{R Inclusion of Shrinkage}
+boost_oneypd_1 = gbm(default_event ~ . - default_indicator,
+                     data=oneypd_tree_sel[train_index, ], distribution ='gaussian',
+                     n.trees=100, interaction.depth=4, shrinkage=0.20, verbose=F, cv.folds=5)
+yhat_oneypd_1 = predict(boost_oneypd_1,
+                        newdata=oneypd_tree_sel[-train_index,],
+                        n.trees=100)
+mean((yhat_oneypd_1 - oneypd_test_boost)^2)
+summary(boost_oneypd_1)
+```
+
+### Return the Optimal Number of Iterations
+```{r Optimal Number of Iterations}
+best.iter <- gbm.perf(boost_oneypd_1, method = "OOB", plot.it = TRUE,)
+print(best.iter)
+```
+
+```{r Plot gradient boosting machine}
+par(mfrow=c(1,2))
+plot.gbm(boost_oneypd_1, i='cc_util')
+plot.gbm(boost_oneypd_1, i='max_arrears_12m')
+```
+
+# ML Calibration
+## Create the data set and fit calibration function
+```{r ML Calibration}
+pred_orig <- as.matrix(predict(rf_oneypd, newdata = oneypd_tree_sel, type='prob'))
+rf_pred <- as.matrix(pred_orig[,2])
+rf_db_cal <- as.data.frame(cbind(oneypd_tree_sel$default_event, rf_pred))
+colnames(rf_db_cal) <- c('def', 'pred')
+```
+
+## Fit the calibration function
+```{r Fit the calibration function}
+pd_model <- glm(def ~ pred, family=binomial(link='logit'), data=rf_db_cal)
+summary(pd_model)
+```
+
+## ML Model validation
+```{r ML Model validation}
+# ROC analysis
+
+predict_test_orig <- as.matrix(
+  predict(rf_oneypd, newdata = oneypd_tree_sel[-train_index, ], type='prob'))
+predict_test <- as.matrix(predict_test_orig[,2])
+oneypd_test <- oneypd_tree_sel[-train_index, 'default_indicator']
+actual_test <- as.matrix(ifelse(oneypd_test=='Yes', 1, 0))
+pred_test <- prediction(predict_test, actual_test)
+perf_test <- performance(pred_test, 'tpr', 'fpr')
+auc_test <- performance(pred_test, 'auc')
+
+plot(perf_test, main='ROC Curve', sub=paste('AUC:', round(auc_test@y.values[[1]][1],5)), colorize=T)
+abline(0,1, lty=8, col='black')
+
+```
+
+```{r KS Analysis}
+#KS (Kolmogrov-Smirnov) Analysis
+ks_test <- max(attr(perf_test,'y.values')[[1]] - attr(perf_test,'x.values')[[1]])
+print(paste('KS Test:', round(ks_test,5)))
+```
+
+```{r Gini index}
+
+gini_test <- giniCoef(predict_test, actual_test)
+print(paste('Gini Index:',round(gini_test,5)))
+```
+
+## Calibrated PD Validation
+```{r calibrated PD validation}
+# predict base on model params
+rf_db_cal$pd <- predict(pd_model, new_data = rf_deb_cal, type='response')
+
+#create bands
+score_cust <- smbinning.custom(rf_db_cal, y='def', x='pred',
+                               cuts=c(0.2, 0.4, 0.6, 0.8))
+
+rf_db_cal <- smbinning.gen(rf_db_cal, score_cust, chrname='band')
+
+# Compare actual v. fitted values
+# calc mean values
+rf_db_cal_plot <- rf_db_cal %>%
+  dplyr::group_by(band) %>%
+  dplyr::summarise(mean_dr = round(mean(def), 4),
+                   mean_pd = round(mean(pd), 4))
+
+# Compute RMSe
+rmse <- sqrt(mean((rf_db_cal_plot$mean_dr - rf_db_cal_plot$mean_pd)^2))
+round(rmse,5)
+
+ggplot(data=rf_db_cal_plot, aes(x=band)) + 
+  geom_line(y=rf_db_cal_plot$mean_pd, group=1, color='blue', lwd=1,alpha=.25, linetype='dotted') +
+  geom_boxplot(aes(y=rf_db_cal_plot$mean_dr, color='blue')) + 
+  
+  
+  geom_line(y=rf_db_cal_plot$mean_pd, group=1, color='red', lwd=1,alpha=.25, linetype='dashed') +
+  geom_boxplot(aes(y=rf_db_cal_plot$mean_pd, color='red')) + 
+  
+  
+  ylab('Default Rate') +
+  xlab('Score Band') +
+  ggtitle("Default Rates: Actual v. Fitted") +
+  scale_color_discrete(name = "", labels = c("Actual Default %", "Fitted Default %")) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+```

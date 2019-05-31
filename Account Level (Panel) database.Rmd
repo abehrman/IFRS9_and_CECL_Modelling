@@ -1,0 +1,56 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(vars)
+library(ggplot2)
+library(caret)
+
+setwd('Z:\\Model Risk\\Adam\\IFRS9_CECL_MV\\')
+
+ltpd_panel <- read.csv('./data/chap3ltpdpanel.csv')
+glimpse(ltpd_panel)
+
+ltpd_panel <- dplyr::mutate_at(ltpd_panel, vars(contains('date')), ~(as.Date(., format='%m/%d/%Y')))
+
+glimpse(ltpd_panel)
+
+```
+
+Compute default rates
+
+```{r}
+dr_data <- ltpd_panel %>%
+  dplyr::group_by(report_date, year) %>%
+  dplyr::summarize(dr_QoQ = mean(default_flag)) %>%
+  dplyr::select(report_date, year, dr_QoQ)
+
+qplot(x = dr_data$report_date, y=dr_data$dr_QoQ, main='Default Rate Analysis') + geom_line() + xlab('Time') + ylab('Default Rate')
+
+```
+
+```{r}
+ltpd_subset <- ltpd_panel %>%
+  dplyr::select(id, default_ind) %>%
+  dplyr::distinct()
+
+set.seed(2122)
+sample_id <- caret::createDataPartition(ltpd_subset$default_ind, p=0.7, list=FALSE)
+train_id <- ltpd_subset[sample_id, ]
+test_id <- ltpd_subset[-sample_id, ]
+
+train_id$sample <- 'train'
+test_id$sample <- 'test'
+
+all_id <- rbind(train_id, test_id)
+all_id <- all_id %>% dplyr::select(id, sample)
+ltpd_panel <- dplyr::left_join(ltpd_panel, all_id, by='id')
+ltpd_panel$sample <- as.factor(ltpd_panel$sample)
+
+ltpd_panel %>% group_by(sample) %>% tally() %>% mutate(freq = n / sum(n))
+
+```
+

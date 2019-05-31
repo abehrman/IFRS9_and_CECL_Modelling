@@ -1,0 +1,44 @@
+---
+title: "Decision Tree for Default Analysis using R"
+output:
+  pdf_document: default
+  html_notebook: default
+  powerpoint_presentation: default
+  toc: true
+  toc_depth: 4
+---
+
+```{R setup, include=FALSE}
+library(rpart)
+library(rpart.plot)
+```
+
+# Decision Tree for Default Analysis using R
+
+Load Data
+```{r setwd and load data, include=FALSE}
+setwd("Z:/Model Risk/Adam/IFRS9_CECL_MV")
+def <- read.csv("Z:/Model Risk/Adam/IFRS9_CECL_MV/data/chap2datatree.csv")
+```
+
+## Fit a classification tree
+
+```{r Fit a classification tree}
+da_tree_classifier1 <- rpart(default_indicator ~ . - default_event - default_flag, data = def, cp = 10^(-6))
+rpart.plot(da_tree_classifier1, extra=101, type=4)
+```
+```{r}
+da_tree_classifier2 <- rpart(default_indicator ~ cc_util + arrears_months, data = def, cp = 10^(-6))
+```
+Prune to two branches
+```{r Prune branches}
+cp2 = which(da_tree_classifier2$cptable[,2] == 2)
+da_tree_classifier2 <- prune(da_tree_classifier2, da_tree_classifier2$cptable[cp2,1])
+rpart.plot(da_tree_classifier2, extra=108, type=4)
+```
+
+## Fit a regression tree classifier
+```{r Fit a regression tree}
+da_tree_regression <- rpart(default_event ~ ., method='anova', data = subset(def, select=-c(default_indicator, default_flag)), cp = 10^(-6), model=TRUE)
+rpart.plot(da_tree_regression, extra=101, type=4)
+```

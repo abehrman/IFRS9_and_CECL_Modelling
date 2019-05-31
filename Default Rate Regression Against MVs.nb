@@ -1,0 +1,22 @@
+---
+title: "Default Rate Regression Against MVs"
+output: html_notebook
+---
+
+```{R}
+setwd('z:/Model Risk/Adam/IFRS9_CECL_MV/')
+
+mac <- read.csv('./data/chap3drts.csv', header=TRUE, sep=",", dec='.')
+mac$Date <- as.Date(mac$Date, format='%m/%d/%Y')
+
+oldpar <- par()
+par(mfrow=c(3,2))
+
+plot(y=mac$dr, x=mac$Date, main='Default Rate', type='l', xlab = 'Time')
+plot(y=mac$gdp, x=mac$Date, main='GDP Growth Rate', type='l', xlab = 'Time')
+plot(y=mac$uer, x=mac$Date, main='Unemployment Rate', type='l', xlab = 'Time')
+plot(y=mac$cpi, x=mac$Date, main='CPI Growth Rate', type='l', xlab = 'Time')
+plot(y=mac$hpi, x=mac$Date, main='HPI Growth Rate', type='l', xlab = 'Time')
+plot(y=mac$ir, x=mac$Date, main='Interest Rate', type='l', xlab = 'Time')
+
+```

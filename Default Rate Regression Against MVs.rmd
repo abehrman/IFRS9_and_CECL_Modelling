@@ -1,0 +1,43 @@
+---
+title: "Default Rate Regression Against MVs"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+```{R fig.height=6, fig.width=7}
+#setwd('z:/Model Risk/Adam/IFRS9_CECL_MV/')
+
+mac <- read.csv('z:/Model Risk/Adam/IFRS9_CECL_MV/data/chap3drts.csv', 
+                header=TRUE, sep=",", dec='.')
+mac$Date <- as.Date(mac$Date, format='%m/%d/%Y')
+
+oldpar <- par()
+par(mfrow=c(3,2))
+
+plot(y=mac$dr, x=mac$Date, main='Default Rate', type='l', xlab = 'Time')
+plot(y=mac$gdp, x=mac$Date, main='GDP Growth Rate', type='l', xlab = 'Time')
+plot(y=mac$uer, x=mac$Date, main='Unemployment Rate', type='l', xlab = 'Time')
+plot(y=mac$cpi, x=mac$Date, main='CPI Growth Rate', type='l', xlab = 'Time')
+plot(y=mac$hpi, x=mac$Date, main='HPI Growth Rate', type='l', xlab = 'Time')
+plot(y=mac$ir, x=mac$Date, main='Interest Rate', type='l', xlab = 'Time')
+
+```
+\newpage
+#KPSS testing
+Test for stationarity of level and trend.
+```{R KPSS Testing, warnings=F}
+library(tseries)
+
+tbl <- as.data.frame(matrix(data = rep(NA, 18), nrow = 6, ncol = 2),
+                     row.names = c('DR','GDP_growth','UER',
+                                   'CPI_growth','HPI_growth','IR'))
+colnames(tbl) <- c('Level (p-value)', 'Trend (p-value)')
+
+for (i in 2:length(colnames(mac))) {
+  tbl[i-1,1] <- round(kpss.test(mac[,i], null='Level', lshort=TRUE)$p.value,3)
+  tbl[i-1,2] <- round(kpss.test(mac[,i], null='Trend', lshort=TRUE)$p.value,3)
+}
+print(tbl)
+
+```

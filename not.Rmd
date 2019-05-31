@@ -1,0 +1,22 @@
+---
+title: "R Notebook"
+output:
+  slide_presentation: default
+  html_notebook: default
+---
+
+# Dividing slides 1
+Pandoc will start a new slide at each first level header
+
+## Header 2
+... as well as second level header
+
+***
+
+blah
+
+## Incremental bullets
+
+>- Use this format
+>- to have bullets appear
+>- one at a time
