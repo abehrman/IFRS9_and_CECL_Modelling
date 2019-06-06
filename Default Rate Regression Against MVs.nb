@@ -1,12 +1,15 @@
 ---
 title: "Default Rate Regression Against MVs"
-output: html_notebook
+output:
+  pdf_document: default
+  html_notebook: default
 ---
 
-```{R}
-setwd('z:/Model Risk/Adam/IFRS9_CECL_MV/')
+```{R fig.height=6, fig.width=7}
+#setwd('z:/Model Risk/Adam/IFRS9_CECL_MV/')
 
-mac <- read.csv('./data/chap3drts.csv', header=TRUE, sep=",", dec='.')
+mac <- read.csv('z:/Model Risk/Adam/IFRS9_CECL_MV/data/chap3drts.csv', 
+                header=TRUE, sep=",", dec='.')
 mac$Date <- as.Date(mac$Date, format='%m/%d/%Y')
 
 oldpar <- par()
@@ -20,3 +23,51 @@ plot(y=mac$hpi, x=mac$Date, main='HPI Growth Rate', type='l', xlab = 'Time')
 plot(y=mac$ir, x=mac$Date, main='Interest Rate', type='l', xlab = 'Time')
 
 ```
+\newpage
+#KPSS testing
+Test for stationarity of level and trend.
+```{R KPSS Testing, warnings=F}
+library(tseries)
+
+tbl <- as.data.frame(matrix(data = rep(NA, 18), nrow = 6, ncol = 2),
+                     row.names = c('DR','GDP_growth','UER',
+                                   'CPI_growth','HPI_growth','IR'))
+colnames(tbl) <- c('Level (p-value)', 'Trend (p-value)')
+
+for (i in 2:length(colnames(mac))) {
+  tbl[i-1,1] <- round(kpss.test(mac[,i], null='Level', lshort=TRUE)$p.value,3)
+  tbl[i-1,2] <- round(kpss.test(mac[,i], null='Trend', lshort=TRUE)$p.value,3)
+}
+print(tbl)
+
+```
+
+# Fit regression model
+## Data prepearation
+```{R data prep}
+dr_t <- as.matrix(mac[5:nrow(mac), 2])
+gdp_tlag <- as.matrix(mac[1:(nrow(mac)-4), 3])
+uer_t <- as.matrix(mac[5:nrow(mac)-4,4])
+
+xx <- as.data.frame(cbind(dr_t, gdp_tlag, uer_t)/100)
+colnames(xx) <- c('dr_tt', 'gdp_ttlag', 'uer_tt')
+
+```
+
+## Fit the model
+```{R Fit the model)}
+fit <- lm(dr_tt ~ . -1, data = xx)
+summary(fit)
+
+df <- as.data.frame(x=cbind.data.frame(mac[5: nrow(mac),1], xx$dr_tt, fit$fitted.values))
+colnames(df) <- c('Date','Actual','Fitted')
+
+p <- ggplot(data=df)
+p <- p + geom_line(mapping = aes(x=Date, y=Actual, color='Actual')) 
+p <- p + geom_line(mapping = aes(x=Date, y=Fitted, color='Fitted'))
+p <- p + scale_color_manual(values=c('Red','Blue'))
+p <- p + ggtitle('Actual v. Fitted Default Rates')
+p
+
+```
+

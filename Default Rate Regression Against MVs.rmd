@@ -1,9 +1,20 @@
 ---
 title: "Default Rate Regression Against MVs"
 output:
-  pdf_document: default
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '4'
   html_notebook: default
+  pdf_document:
+    toc: yes
+    toc_depth: 4
 ---
+
+\newpage
+```{R loadlibs, warnings=F, echo=T}
+library(ggplot2)
+```
 
 ```{R fig.height=6, fig.width=7}
 #setwd('z:/Model Risk/Adam/IFRS9_CECL_MV/')
@@ -41,3 +52,33 @@ for (i in 2:length(colnames(mac))) {
 print(tbl)
 
 ```
+
+# Fit regression model
+## Data prepearation
+```{R data prep}
+dr_t <- as.matrix(mac[5:nrow(mac), 2])
+gdp_tlag <- as.matrix(mac[1:(nrow(mac)-4), 3])
+uer_t <- as.matrix(mac[5:nrow(mac)-4,4])
+
+xx <- as.data.frame(cbind(dr_t, gdp_tlag, uer_t)/100)
+colnames(xx) <- c('dr_tt', 'gdp_ttlag', 'uer_tt')
+
+```
+
+## Fit the model
+```{R Fit the model}
+fit <- lm(dr_tt ~ . -1, data = xx)
+summary(fit)
+
+df <- as.data.frame(x=cbind.data.frame(mac[5: nrow(mac),1], xx$dr_tt, fit$fitted.values))
+colnames(df) <- c('Date','Actual','Fitted')
+
+p <- ggplot(data=df)
+p <- p + geom_line(mapping = aes(x=Date, y=Actual, color='Actual')) 
+p <- p + geom_line(mapping = aes(x=Date, y=Fitted, color='Fitted'))
+p <- p + scale_color_manual(values=c('Red','Blue'))
+p <- p + ggtitle('Actual v. Fitted Default Rates')
+p
+
+```
+
